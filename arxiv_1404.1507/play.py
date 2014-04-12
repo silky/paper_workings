@@ -225,7 +225,10 @@ def deposit ( (s, keyState), key=None ):
         
         >>> (s1, key1) = generateMoneyData(20, seed=32)
         >>> (s2, key2) = generateMoneyData(20, seed=412)
-        >>> deposit( (s1, listToState(key1)), key1 )
+        >>> deposit( (s1, listToState(key1)), key1 ) 
+        True
+
+        >>> deposit( getMoney(50) )
         True
         """
 
@@ -276,10 +279,10 @@ def generateMoneyData (amount, seed=None):
 
 
 def getMoney (amount):
-    """ Returns (s,|k_s>).
+    """ Returns (s, |k_s>).
         """
     (s, key) = generateMoneyData(amount)
-    keyState = keyState(key)
+    keyState = listToState(key)
 
     return (s, keyState)
 
