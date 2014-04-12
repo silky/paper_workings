@@ -118,12 +118,11 @@ def measure (inState, basis="0,1", qubits=None):
 
     if basis == "+,-":
         # Hadamard the bits we're measuring, then just measure them in the
-        # computational basis.
+        # computational basis. So build a thing that changes basis.
         
         H_or_I = lambda x: H if (x in qubits) else np.identity(2)
         
         allHadamards = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
-        # state = np.dot( allHadamards, state )
         basisChanger = allHadamards
 
     # We always measure in the computational basis.
@@ -151,9 +150,6 @@ def measure (inState, basis="0,1", qubits=None):
             #
             # vec  = np.dot(basisChanger, vec)
 
-            # import pdb
-            # pdb.set_trace()
-
             options.append( {"i": str(i), "vec": vec} )
             probs.append( prob.flatten()[0] )
 
@@ -167,16 +163,11 @@ def measure (inState, basis="0,1", qubits=None):
         state = data["vec"]
         state = state/np.linalg.norm(state)
 
-        # import pdb
-        # pdb.set_trace()
-
         # Lazily relabel if we were asked to.
         if basis == "+,-": basisLabel = {"0": "+", "1": "-"}[data["i"]]
         else:              basisLabel = data["i"]
 
         outcomes.append(basisLabel)
-
-    # state = np.dot( basisChanger, state )
 
     # Return the measurement outcomes for the qubits, and the resulting state.
     return (outcomes, state)
