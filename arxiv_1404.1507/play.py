@@ -218,14 +218,14 @@ def deposit ( (s, keyState), key=None ):
         >>> deposit( (s, listToState(key)) )
         True
 
-        # >>> (s1, key1) = generateMoneyData(20, 3)
-        # >>> (s2, key2) = generateMoneyData(20, 4 )
-        # >>> deposit( (s2, listToState(key1)) ) # Mismatched key and serial number.
-        # False
+        >>> (s1, key1) = generateMoneyData(20, 3)
+        >>> (s2, key2) = generateMoneyData(20, 4 )
+        >>> deposit( (s2, listToState(key1)) ) # Mismatched key and serial number.
+        False
         
         >>> (s1, key1) = generateMoneyData(20, seed=32)
         >>> (s2, key2) = generateMoneyData(20, seed=412)
-        >>> deposit( (s1, listToState(key1)), key1 ) # Mismatched key and serial number.
+        >>> deposit( (s1, listToState(key1)), key1 )
         True
         """
 
@@ -245,7 +245,7 @@ def deposit ( (s, keyState), key=None ):
         outcomes.append(a[0])
 
     if outcomes != referenceKey:
-        assert False
+        # assert False
         return False
     
     return True
