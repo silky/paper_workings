@@ -180,6 +180,18 @@ def listToState (key):
                [0],
                [1],
                [0]])
+
+        >>> listToState(["+", "-"])
+        array([[ 0.5],
+               [-0.5],
+               [ 0.5],
+               [-0.5]])
+
+        >>> listToState(["+", "+"])
+        array([[ 0.5],
+               [ 0.5],
+               [ 0.5],
+               [ 0.5]])
         """
 
     # Build the state with fold(...)
@@ -197,14 +209,23 @@ def listToState (key):
 # Bank-related bits.
 # -------------------------------
 
-def deposit ( (s, keyState) ):
+def deposit ( (s, keyState), key=None ):
     """ Returns True if the money can be deposited. False otherwise.
         Furthermore, if we will actually notify the police if we determine
         that the money is not legitimate.
 
         >>> (s, key) = generateMoneyData(20, 2)
-        >>> keyState = listToState(key)
-        >>> deposit( (s, keyState) )
+        >>> deposit( (s, listToState(key)) )
+        True
+
+        # >>> (s1, key1) = generateMoneyData(20, 3)
+        # >>> (s2, key2) = generateMoneyData(20, 4 )
+        # >>> deposit( (s2, listToState(key1)) ) # Mismatched key and serial number.
+        # False
+        
+        >>> (s1, key1) = generateMoneyData(20, seed=32)
+        >>> (s2, key2) = generateMoneyData(20, seed=412)
+        >>> deposit( (s1, listToState(key1)), key1 ) # Mismatched key and serial number.
         True
         """
 
@@ -213,18 +234,18 @@ def deposit ( (s, keyState) ):
     # Alright, so our process here is to measure each bit in the basis that we
     # know it should be measured in.
 
-    referenceKey = bankDatabase[s]
+    referenceKey      = bankDatabase[s]
     referenceKeyState = listToState(referenceKey)
 
     bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-" } 
 
     outcomes = []
     for (i, k) in enumerate(referenceKey):
-        (a, referenceKeyState) = measure( referenceKeyState, basis=bases[k], qubits=[i+1])
+        (a, keyState) = measure( keyState, basis=bases[k], qubits=[i+1])
         outcomes.append(a[0])
 
     if outcomes != referenceKey:
-        print "Forgery!"
+        assert False
         return False
     
     return True
