@@ -95,10 +95,10 @@ def measure (inState, basis="0,1", qubits=None):
 
         >>> np.random.seed(1) # Requires a seed as the first component of a is nondetermininstic
         >>> measure( listToState(["+", "0"]),  basis="0,1", qubits=[1, 2] )
-        (['1', '0'], array([[ 0.70710678],
-               [ 0.        ],
-               [ 0.70710678],
-               [ 0.        ]]))
+        (['1', '0'], array([[ 0.],
+               [ 0.],
+               [ 1.],
+               [ 0.]]))
 
         Returns a tuple consisting of: (measurementOutcomes, newState).
 
@@ -251,16 +251,3 @@ def getMoney (amount):
 
     return (s, keyState)
 
-
-
-def test_sadness_1 ():
-    (a, b) = measure( listToState(["+", "0"]),  basis="0,1", qubits=[1,2] )
-    assert a[1] == '0'
-
-    # What can "b" be?
-    #
-    #
-    # assert all(b == np.array([[ 0.70710678],
-    #            [ 0.        ],
-    #            [ 0.70710678],
-    #            [ 0.        ]]))
