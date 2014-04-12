@@ -207,7 +207,27 @@ def deposit ( (s, keyState) ):
         >>> deposit( (s, keyState) )
         True
         """
-    return False
+
+    assert s in bankDatabase, "Key is not even in the database! What are you doing!"
+    
+    # Alright, so our process here is to measure each bit in the basis that we
+    # know it should be measured in.
+
+    referenceKey = bankDatabase[s]
+    referenceKeyState = listToState(referenceKey)
+
+    bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-" } 
+
+    outcomes = []
+    for (i, k) in enumerate(referenceKey):
+        (a, referenceKeyState) = measure( referenceKeyState, basis=bases[k], qubits=[i+1])
+        outcomes.append(a[0])
+
+    if outcomes != referenceKey:
+        print "Forgery!"
+        return False
+    
+    return True
 
 
 def generateMoneyData (amount, seed=None):
