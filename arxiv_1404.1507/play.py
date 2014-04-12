@@ -7,16 +7,18 @@
     All of this is in qubits.
     """
 
-import random, numpy
+# HACK/WARNING: Numpy and random use different seeds.
+import random
+import numpy as np
 
 states = {
-    "0": numpy.array([[1], [0]]),
-    "1": numpy.array([[0], [1]]),
-    "+": numpy.array([[1], [1]])/numpy.sqrt(2),
-    "-": numpy.array([[1], [-1]])/numpy.sqrt(2),
+    "0": np.array([[1], [0]]),
+    "1": np.array([[0], [1]]),
+    "+": np.array([[1], [1]])/np.sqrt(2),
+    "-": np.array([[1], [-1]])/np.sqrt(2),
 }
 
-H = numpy.array([[1,1],[1,-1]])/numpy.sqrt(2)
+H = np.array([[1,1],[1,-1]])/np.sqrt(2)
 
 # Our serial number database. is the map:
 #
@@ -30,45 +32,154 @@ bankDatabase = {}
 # General bits
 # -------------------------------
 
+def weightedChoice (values, probabilities):
+    """ Returns a weight choice from the values according to the probability 
+        distribution.
+        
+        >>> weightedChoice( ["a", "b"], [ 0, 1 ] )
+        'b'
+
+        >>> weightedChoice( ["a", "b"], [ 1, 0 ] )
+        'a'
+
+        Used to return the state based on the square of the amplitudes in some
+        basis.
+        """
+
+    assert abs(sum(probabilities)-1) < 1e-10, "Probs sum to: {0:f}".format(sum(probabilities))
+
+    size  = 1000 # Increase to improve the accuracy.
+    bins  = np.add.accumulate(probabilities)
+    space = np.array(values)[np.digitize(np.random.random_sample(size), bins)]
+    return random.choice(space)
+
+
 def measure (inState, basis="0,1", qubits=None):
     """ Measures the given state in the given basis. Will return a new state.
-        >>> measure( listToState(["0", "0"]), basis="0,1", qubits=[1,2] )
-        ( [0, 0], ... )
-        
-        >>> measure( listToState(["0", "0"]) )
-        ( [0, 0], ... )
 
-        >>> measure( listToState(["+", "+"]),  basis="+,-" )
-        ( [0, 0], ... )
+        >>> measure( listToState(["0", "0"]), basis="0,1", qubits=[1] )
+        (['0'], array([[ 1.],
+               [ 0.],
+               [ 0.],
+               [ 0.]]))
+
+        >>> measure( listToState(["1", "0"]), basis="0,1", qubits=[1] )
+        (['1'], array([[ 0.],
+               [ 0.],
+               [ 1.],
+               [ 0.]]))
+
+        >>> measure( listToState(["0", "0"]) )
+        (['0', '0'], array([[ 1.],
+               [ 0.],
+               [ 0.],
+               [ 0.]]))
+
+        >>> measure( listToState(["+", "+"]),  basis="+,-", qubits=[1] )
+        (['+'], array([[ 0.5],
+               [ 0.5],
+               [ 0.5],
+               [ 0.5]]))
+        
+        >>> measure( listToState(["+", "0"]),  basis="+,-", qubits=[1] )
+        (['+'], array([[ 0.70710678],
+               [ 0.        ],
+               [ 0.70710678],
+               [ 0.        ]]))
+        
+        >>> measure( listToState(["+", "0"]),  basis="0,1", qubits=[2] )
+        (['0'], array([[ 0.70710678],
+               [ 0.        ],
+               [ 0.70710678],
+               [ 0.        ]]))
+
+        >>> np.random.seed(1) # Requires a seed as the first component of a is nondetermininstic
+        >>> measure( listToState(["+", "0"]),  basis="0,1", qubits=[1, 2] )
+        (['1', '0'], array([[ 0.70710678],
+               [ 0.        ],
+               [ 0.70710678],
+               [ 0.        ]]))
 
         Returns a tuple consisting of: (measurementOutcomes, newState).
+
+        Note: Qubits are indexed in a way that is compatibile with Mathematica.
+        Note: For convenience, measurement always happens
     """
-    state = inState
     assert basis in ["0,1", "+,-"]
 
-    dim = int(numpy.log2(len(state)))
+    # Some local vairables.
+    state = inState
+    dim   = int(np.log2(len(state)))
+
+    if not qubits: # no qubits? all qubits.
+        qubits = xrange(1, dim+1)
+
+    basisChanger = np.identity(len(state))
 
     if basis == "+,-":
-        # Hadamard the entire thing.
-        allHadamards = reduce(np.kron, [H for x in xrange(dim)], 1)
-        state = numpy.prod( allHadamards, state )
+        # Hadamard the bits we're measuring, then just measure them in the
+        # computational basis.
+        
+        H_or_I = lambda x: H if (x in qubits) else np.identity(2)
+        
+        allHadamards = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
+        # state = np.dot( allHadamards, state )
+        basisChanger = allHadamards
 
-    # Build the 2^dim basis elements by string manipulation.
-    measurementBasis = [ listToState( list(bin(x)[2:].zfill(dim)) ) 
-            for x in xrange(len(state)) ]
+    # We always measure in the computational basis.
+    measurementBasis = [ listToState(["0"]), listToState(["1"]) ]
 
-    # Now we can do a POVM.
+    outcomes = []
+    for qubitPosition in qubits:
+        # To be used with "weightedChoice"
+        options = []
+        probs   = []
 
-    povm = sum( numpy.dot( v, numpy.conj(numpy.transpose(v)) ) for v in
-            measurementBasis )
+        # Okay, so for this position, we should like to build I P_{e_i} I, for
+        # each projector P_{e_i}.
 
-    # Check that it actually is a POVM.
-    assert numpy.all(povm**2 == numpy.identity(len(state)))
+        for (i, ei) in enumerate(measurementBasis):
+            proj = reduce(np.kron, [ np.identity(2**(qubitPosition-1)),
+                np.dot(ei, np.conj(np.transpose(ei))),
+                np.identity(2**(dim-qubitPosition)) ], 1)
 
+            # Switch proj
+            proj = np.dot( np.conj(np.transpose(basisChanger)), np.dot( proj, basisChanger ) )
 
+            vec  = np.dot( proj, state )
+            prob = np.dot( np.conj(np.transpose(vec)), vec )
+            #
+            # vec  = np.dot(basisChanger, vec)
 
-    # 1. We want to construct a basis as large as the input state.
-    pass
+            # import pdb
+            # pdb.set_trace()
+
+            options.append( {"i": str(i), "vec": vec} )
+            probs.append( prob.flatten()[0] )
+
+        data = weightedChoice(options, np.array(probs))
+        
+        # 
+        # Great. We can now update the state, we also probably need to
+        # normalise it.
+        #
+
+        state = data["vec"]
+        state = state/np.linalg.norm(state)
+
+        # import pdb
+        # pdb.set_trace()
+
+        # Lazily relabel if we were asked to.
+        if basis == "+,-": basisLabel = {"0": "+", "1": "-"}[data["i"]]
+        else:              basisLabel = data["i"]
+
+        outcomes.append(basisLabel)
+
+    # state = np.dot( basisChanger, state )
+
+    # Return the measurement outcomes for the qubits, and the resulting state.
+    return (outcomes, state)
 
 
 def listToState (key):
@@ -81,7 +192,7 @@ def listToState (key):
         """
 
     # Build the state with fold(...)
-    keyState = reduce(numpy.kron, [states[x] for x in key], 1)
+    keyState = reduce(np.kron, [states[x] for x in key], 1)
     return keyState
 
 
@@ -140,3 +251,16 @@ def getMoney (amount):
 
     return (s, keyState)
 
+
+
+def test_sadness_1 ():
+    (a, b) = measure( listToState(["+", "0"]),  basis="0,1", qubits=[1,2] )
+    assert a[1] == '0'
+
+    # What can "b" be?
+    #
+    #
+    # assert all(b == np.array([[ 0.70710678],
+    #            [ 0.        ],
+    #            [ 0.70710678],
+    #            [ 0.        ]]))
