@@ -18,7 +18,10 @@ states = {
     "-": np.array([[1], [-1]])/np.sqrt(2),
 }
 
+I = np.identity(2)
+X = np.array([[0,1],[1,0]])
 H = np.array([[1,1],[1,-1]])/np.sqrt(2)
+n = 7 # They keysize
 
 # Our serial number database. is the map:
 #
@@ -31,6 +34,11 @@ bankDatabase = {}
 
 # General bits
 # -------------------------------
+
+def ct (array):
+    """ Conjugate-transpose.  """
+    return np.conj(np.transpose(array))
+
 
 def weightedChoice (values, probabilities):
     """ Returns a weight choice from the values according to the probability 
@@ -94,6 +102,7 @@ def measure (inState, basis="0,1", qubits=None):
                [ 0.        ]]))
 
         >>> np.random.seed(1) # Requires a seed as the first component of a is nondetermininstic
+        >>> random.seed(1) # Requires a seed as the first component of a is nondetermininstic
         >>> measure( listToState(["+", "0"]),  basis="0,1", qubits=[1, 2] )
         (['1', '0'], array([[ 0.],
                [ 0.],
@@ -106,6 +115,7 @@ def measure (inState, basis="0,1", qubits=None):
         Note: For convenience, measurement always happens
     """
     assert basis in ["0,1", "+,-"]
+    assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
 
     # Some local vairables.
     state = inState
@@ -120,7 +130,7 @@ def measure (inState, basis="0,1", qubits=None):
         # Hadamard the bits we're measuring, then just measure them in the
         # computational basis. So build a thing that changes basis.
         
-        H_or_I = lambda x: H if (x in qubits) else np.identity(2)
+        H_or_I = lambda x: H if (x in qubits) else I
         
         allHadamards = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
         basisChanger = allHadamards
@@ -169,6 +179,8 @@ def measure (inState, basis="0,1", qubits=None):
 
         outcomes.append(basisLabel)
 
+    # assert abs(np.linalg.norm(state) - 1) < 1e-10, "Norm not 1."
+
     # Return the measurement outcomes for the qubits, and the resulting state.
     return (outcomes, state)
 
@@ -202,8 +214,140 @@ def listToState (key):
 # Attacker-bits
 # -------------------------------
 
-# def naivelyForge ():
+def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
+    """ Implementation of the Elitzur-Vaidman "bomb-quality-tester". Or perhaps
+        actually just an implementation of the circuit in Figure 1 of the
+        paper.
 
+        bombOperator:  A single-qubit operation, whose measurement outcome we
+                        will be interested in.
+
+        bomState:      The state which we are applying the bombOperator to.
+                        Note that we will only apply to the specified qubit.
+
+        didExplode:    A function that returns True or False when passed the
+                        measurement outcome after applying 'bombOperator'.
+
+        Returns True if it is a live bomb, false otherwise.
+        Side effects: You might die.
+
+        >>> isItABomb(I, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        False
+        
+        >>> isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        True
+
+        If we reinterpret the results, we don't die on a "|1>" either.
+
+        >>> isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
+        True
+    """
+    if not N:
+        # With N = 100, pr(success) from (3) of the paper is approximately 97.5%
+        N = 100
+
+    s0 = listToState(["0"])
+    s1 = listToState(["1"])
+    
+    delta = np.pi/(2. * N)
+
+
+    dimBomb = int(np.log2(len(bombState)))
+
+
+    # R_delta on only the first qubit.
+    Rdelta = np.kron( np.array([
+        [ np.cos(delta), -np.sin(delta) ],
+        [ np.sin(delta),  np.cos(delta) ] ]), np.identity(2**dimBomb) )
+
+    # Controlled-bomb operator
+    # TODO: Change which qubit this is applied to.
+    C_bop = np.kron( np.dot(s0, ct(s0)), I ) + np.kron( np.dot(s1, ct(s1)), bombOperator )
+
+    # Initial value.
+    # state = listToState(["0", "0"])
+    state = np.kron( listToState(["0"]), bombState )
+
+    for k in xrange(N):
+        # 1. Initialise second qubit to |0>. 
+        #
+        #   We choose to do this by measuring it in the computational basis,
+        #   and if it is "|1>", apply "X" to it.
+
+        # (a, state) = measure(state, basis="0,1", qubits=[2])
+        # if a[0] == "1":
+        #     state = np.dot( np.kron(I, X), state )
+
+        # 2. Rotate the first qubit using R_delta.
+        state = np.dot( Rdelta, state )
+        
+        # 3. Apply controlled-bomb
+        state = np.dot(C_bop, state)
+
+        # 4. Measure the qubit (ignoring the one we're rotating with) that
+        # we've been asked to.
+        (a, state) = measure(state, basis="0,1", qubits=[1 + qubit])
+        
+        exploded = didExplode(a)
+
+        assert not exploded, "You have died."
+    
+    # So now, if the first register is |1>, we know that we were passed a dud.
+    (a, state) = measure(state, basis="0,1")
+    
+    if a[0] == "1":
+        # Not a bomb.
+        return False
+    
+    # Otherwise, live bomb!
+    return True
+
+
+def nsCounterfeit ( (s, keyState) ):
+    """ Counterfeits according to the protocol of Daniel Nagaj and Or Sattath.
+
+        >>> (s, forgedKeyState) = nsCounterfeit( getMoney(1000, seed=2) )
+        >>> deposit( (s, forgedKeyState) )
+        True
+
+        (c.f. "naivelyCounterfeit")
+    """
+    
+    guessedKey = ["0" for x in xrange(7)]
+
+    # Our plan: Forge Money.
+    #
+    # We proceed as follows.
+    # 
+    # isItABomb(X, ke
+
+
+    # isItABomb( X, state )
+
+    return (s, listToState(guessedKey))
+
+ 
+def naivelyCounterfeit ( (s, keyState) ):
+    """
+        Counterfeits the given (s, |k_s>) pair by measuring each qubit in the
+        computational basis.
+
+        >>> (s, forgedKeyState) = naivelyCounterfeit( getMoney(1000, seed=2) )
+        >>> deposit( (s, forgedKeyState) )
+        False
+    """
+    
+    # Our plan: Forge Money. We perform the forgery naively, by measuring
+    # qubit in the computational basis. This gives is the right answer when
+    # the state is in this basis, and the wrong answer 1/4 of the time
+    # otherwise.
+
+    guessedKey = []
+    for i in xrange(1, n+1):
+        (a, keyState) = measure(keyState, basis="0,1", qubits=[i])
+        guessedKey.append( a[0] )
+
+    return (s, listToState(guessedKey))
 
 
 # Bank-related bits.
@@ -264,9 +408,7 @@ def generateMoneyData (amount, seed=None):
 
     if seed: random.seed(seed)
 
-    # Keysize.
-    n = 7
-    s = random.randint(0, 2**7)
+    s = random.randint(0, 2**n)
 
     # Let's generate a 7-bit key from the set of states {0,1,+,-}.
     alphabet = ["0", "1", "+", "-"]
@@ -274,15 +416,36 @@ def generateMoneyData (amount, seed=None):
 
     # Save this key.
     bankDatabase[s] = key
-
     return (s, key)
 
 
-def getMoney (amount):
+def getMoney (amount, seed=None):
     """ Returns (s, |k_s>).
         """
-    (s, key) = generateMoneyData(amount)
+    (s, key) = generateMoneyData(amount, seed)
     keyState = listToState(key)
 
     return (s, keyState)
 
+
+# Some tests
+# -------------------------------
+def test_naive_counterfeiting ():
+
+    iters = 100 # Let's have a few attempts at counterfeiting.
+    outcomes = []
+    for k in xrange(iters):
+        (s, keyState) = naivelyCounterfeit( getMoney(50) )
+        outcomes.append( deposit((s, keyState)) )
+    #
+    trues  = len(filter(lambda x: x, outcomes))
+    falses = len(outcomes) - trues
+
+    assert trues < falses # Hopefully
+
+    # We expect to succeed (3/4)^n percent of the time.
+
+    prSuccess = 100 * (3/4.)**n
+    
+    assert falses/float(trues) < prSuccess
+    
