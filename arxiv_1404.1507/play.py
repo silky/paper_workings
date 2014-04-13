@@ -21,7 +21,7 @@ states = {
 I = np.identity(2)
 X = np.array([[0,1],[1,0]])
 H = np.array([[1,1],[1,-1]])/np.sqrt(2)
-n = 7 # They keysize
+n = 6 # They keysize
 
 # Our serial number database. is the map:
 #
@@ -157,8 +157,6 @@ def measure (inState, basis="0,1", qubits=None):
 
             vec  = np.dot( proj, state )
             prob = np.dot( np.conj(np.transpose(vec)), vec )
-            #
-            # vec  = np.dot(basisChanger, vec)
 
             options.append( {"i": str(i), "vec": vec} )
             probs.append( prob.flatten()[0] )
@@ -228,18 +226,23 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         didExplode:    A function that returns True or False when passed the
                         measurement outcome after applying 'bombOperator'.
 
-        Returns True if it is a live bomb, false otherwise.
+        Returns True if it is a live bomb, False otherwise, along with the
+            post-acted-upon bombState.
+
         Side effects: You might die.
 
-        >>> isItABomb(I, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> (a, _) = isItABomb(I, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> a
         False
         
-        >>> isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> (a, _) = isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> a
         True
 
         If we reinterpret the results, we don't die on a "|1>" either.
 
-        >>> isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
+        >>> (a, _) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
+        >>> a
         True
     """
     if not N:
@@ -251,7 +254,6 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
     
     delta = np.pi/(2. * N)
 
-
     dimBomb = int(np.log2(len(bombState)))
 
 
@@ -260,24 +262,18 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         [ np.cos(delta), -np.sin(delta) ],
         [ np.sin(delta),  np.cos(delta) ] ]), np.identity(2**dimBomb) )
 
-    # Controlled-bomb operator
-    # TODO: Change which qubit this is applied to.
-    C_bop = np.kron( np.dot(s0, ct(s0)), I ) + np.kron( np.dot(s1, ct(s1)), bombOperator )
+    # Set the bomb operator to act only on the qubit we've asked it to.
+    bop = reduce(np.kron, [ np.identity(2**(qubit-1)),
+        bombOperator,
+        np.identity(2**(dimBomb-qubit)) ], 1)
 
-    # Initial value.
-    # state = listToState(["0", "0"])
+    # Controlled-bomb operator
+    C_bop = np.kron( np.dot(s0, ct(s0)), np.identity(2**dimBomb) ) + np.kron( np.dot(s1, ct(s1)), bop )
+
+    # 1. Initial value.
     state = np.kron( listToState(["0"]), bombState )
 
     for k in xrange(N):
-        # 1. Initialise second qubit to |0>. 
-        #
-        #   We choose to do this by measuring it in the computational basis,
-        #   and if it is "|1>", apply "X" to it.
-
-        # (a, state) = measure(state, basis="0,1", qubits=[2])
-        # if a[0] == "1":
-        #     state = np.dot( np.kron(I, X), state )
-
         # 2. Rotate the first qubit using R_delta.
         state = np.dot( Rdelta, state )
         
@@ -293,38 +289,61 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         assert not exploded, "You have died."
     
     # So now, if the first register is |1>, we know that we were passed a dud.
-    (a, state) = measure(state, basis="0,1")
+    (a, state) = measure(state, basis="0,1", qubits=[1])
+
+    # Give them back the state they gave us, now that we have acted on it.
+    # finalState
     
     if a[0] == "1":
         # Not a bomb.
-        return False
-    
-    # Otherwise, live bomb!
-    return True
+        bomb = False
+    else:
+        # Otherwise, live bomb!
+        bomb = True
+
+    # finalState = 
+
+    return (bomb, finalState)
+    # return (True, state)
 
 
 def nsCounterfeit ( (s, keyState) ):
     """ Counterfeits according to the protocol of Daniel Nagaj and Or Sattath.
 
-        >>> (s, forgedKeyState) = nsCounterfeit( getMoney(1000, seed=2) )
-        >>> deposit( (s, forgedKeyState) )
-        True
+        # >>> ((s, forgedKeyState), original) = nsCounterfeit( getMoney(1000, seed=2) )
+        # >>> deposit( (s, forgedKeyState) )
+        # True
 
         (c.f. "naivelyCounterfeit")
     """
-    
-    guessedKey = ["0" for x in xrange(7)]
+
+    # Let's cheat for a moment.
+    (s, key) = generateMoneyData(20, 1)
+    keyState = listToState(key)
+
+    # We're continually modifying this.
+    state = keyState
+
+    guessedKey = []
 
     # Our plan: Forge Money.
     #
     # We proceed as follows.
-    # 
-    # isItABomb(X, ke
 
+    def didExplode (x):
+        return False
 
-    # isItABomb( X, state )
+    eps = 0.10
+    N = int(np.pi**2 * n / (2. * eps))
+    
+    outcomes = []
+    for k in xrange(1, n+1):
+        (outcome1, state) = isItABomb( X, state, qubit=k, didExplode=didExplode, N=N)
+        (outcome2, state) = isItABomb(-X, state, qubit=k, didExplode=didExplode, N=N)
 
-    return (s, listToState(guessedKey))
+        outcomes.append( (outcome1, outcome2) )
+
+    return ((s, listToState(guessedKey)), (s, state))
 
  
 def naivelyCounterfeit ( (s, keyState) ):
@@ -398,21 +417,22 @@ def deposit ( (s, keyState), key=None ):
     return True
 
 
-def generateMoneyData (amount, seed=None):
+def generateMoneyData (amount, seed=None, nn=None):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
 
-        >>> generateMoneyData(20, 2)
+        >>> generateMoneyData(20, seed=2, n=7)
         (123, ['-', '0', '0', '-', '+', '+', '1'])
         """
 
+    if not nn: nn = n
     if seed: random.seed(seed)
 
-    s = random.randint(0, 2**n)
+    s = random.randint(0, 2**nn)
 
     # Let's generate a 7-bit key from the set of states {0,1,+,-}.
     alphabet = ["0", "1", "+", "-"]
-    key = [ random.choice(alphabet) for k in xrange(n) ]
+    key = [ random.choice(alphabet) for k in xrange(nn) ]
 
     # Save this key.
     bankDatabase[s] = key
@@ -426,6 +446,11 @@ def getMoney (amount, seed=None):
     keyState = listToState(key)
 
     return (s, keyState)
+
+
+if __name__ == "__main__":
+    (s, forged) = nsCounterfeit( getMoney(100) )
+    # deposit( 
 
 
 # Some tests
@@ -448,4 +473,3 @@ def test_naive_counterfeiting ():
     prSuccess = 100 * (3/4.)**n
     
     assert falses/float(trues) < prSuccess
-    
