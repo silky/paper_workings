@@ -304,7 +304,6 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
     # finalState = 
 
     return (bomb, finalState)
-    # return (True, state)
 
 
 def nsCounterfeit ( (s, keyState) ):
