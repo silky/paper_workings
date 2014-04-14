@@ -427,8 +427,8 @@ def naivelyCounterfeit ( (s, keyState) ):
         >>> setseed(3)
         >>> (s, key) = generateMoneyData(1000)
         >>> assert '+' in key
-        >>> (s, forgedKeyState) = naivelyCounterfeit( (s, listToState(key)) )
-        >>> (a, _) = validate( (s, forgedKeyState) )
+        >>> (forged, original) = naivelyCounterfeit( (s, listToState(key)) )
+        >>> (a, _) = validate(forged)
         >>> a
         False
 
@@ -562,8 +562,8 @@ def test_naive_counterfeiting ():
     outcomes = []
     for k in xrange(iters):
         (s, key) = generateMoneyData(5)
-        (s, keyState) = naivelyCounterfeit( (s, listToState(key)) )
-        (valid, _) = validate((s, keyState))
+        (forged, original) = naivelyCounterfeit( (s, listToState(key)) )
+        (valid, _) = validate(forged)
         outcomes.append(valid)
     #
     trues  = len(filter(lambda x: x, outcomes))
