@@ -374,7 +374,7 @@ def nsCounterfeit ( (s, keyState) ):
     """
 
     # Let's cheat for a moment.
-    (s, key) = generateMoneyData(20, 3)
+    (s, key) = generateMoneyData(20, 6)
     keyState = listToState(key)
 
     # We're continually modifying this.
@@ -387,8 +387,6 @@ def nsCounterfeit ( (s, keyState) ):
     eps = 0.10
     N = int(np.pi**2 * n / (2. * eps))
     
-    # import pdb
-    # pdb.set_trace()
     print("key, ", key)
 
     def curriedNsTester (state):
@@ -399,14 +397,14 @@ def nsCounterfeit ( (s, keyState) ):
 
         guess = None
 
-        (isDud, state) = isItABomb( X, state, qubit=k, tester=curriedNsTester, N=N)
+        (bomb, state) = isItABomb(X, state, qubit=k, tester=curriedNsTester, N=N)
 
-        if isDud:
+        if not bomb:
             guess = "+"
 
         if not guess:
-            (isDud, state) = isItABomb(-X, state, qubit=k, tester=curriedNsTester, N=N)
-            if isDud: 
+            (bomb, state) = isItABomb(-X, state, qubit=k, tester=curriedNsTester, N=N)
+            if not bomb: 
                 guess = "-"
 
         if not guess:
@@ -415,9 +413,9 @@ def nsCounterfeit ( (s, keyState) ):
 
         guesses.append(guess)
 
-        assert all(state == keyState)
+        assert all(abs(state - keyState) < 1e-15)
 
-    print("guess ", guesses)
+    # print("guess ", guesses)
     # import pdb
     # pdb.set_trace()
 
