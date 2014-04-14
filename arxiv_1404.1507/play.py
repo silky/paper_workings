@@ -10,6 +10,7 @@
 
 # HACK/WARNING: Numpy and random use different seeds.
 import random
+import copy
 import numpy as np
 
 states = {
@@ -22,7 +23,7 @@ states = {
 I = np.identity(2)
 X = np.array([[0,1],[1,0]])
 H = np.array([[1,1],[1,-1]])/np.sqrt(2)
-n = 6 # They keysize
+n = 3 # They keysize
 
 # Our serial number database. is the map:
 #
@@ -65,6 +66,11 @@ def weightedChoice (values, probabilities):
 
 def measure (inState, basis="0,1", qubits=None):
     """ Measures the given state in the given basis. Will return a new state.
+
+        Returns a tuple consisting of: (measurementOutcomes, newState).
+
+        Note: Qubits are indexed in a way that is compatibile with Mathematica.
+        Note: For convenience, measurement always happens
 
         >>> measure( listToState(["0", "0"]), basis="0,1", qubits=[1] )
         (['0'], array([[ 1.],
@@ -110,10 +116,6 @@ def measure (inState, basis="0,1", qubits=None):
                [ 1.],
                [ 0.]]))
 
-        Returns a tuple consisting of: (measurementOutcomes, newState).
-
-        Note: Qubits are indexed in a way that is compatibile with Mathematica.
-        Note: For convenience, measurement always happens
     """
     assert basis in ["0,1", "+,-"]
     assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
@@ -213,7 +215,7 @@ def listToState (key):
 # Attacker-bits
 # -------------------------------
 
-def bombMeasurer (state):
+def bombTester (state):
     """ Measures the state and checks if it was a bomb or not.
     """
 
@@ -228,7 +230,7 @@ def bombMeasurer (state):
     return (exploded, state)
 
 
-def isItABomb (bombOperator, bombState, qubit, measurer, N=None):
+def isItABomb (bombOperator, bombState, qubit, tester, N=None):
     """ Implementation of the Elitzur-Vaidman "bomb-quality-tester". Or perhaps
         actually just an implementation of the circuit in Figure 1 of the
         paper.
@@ -242,26 +244,27 @@ def isItABomb (bombOperator, bombState, qubit, measurer, N=None):
         qubit:          The qubit, inside the bomb state, onto which we shall
                         enact the 'bombOperator'.
 
-        measurer:       state -> (Bool, state)
+        tester:         state -> (Bool, state)
 
                         A function that takes a state and returns a state.
                         This function should also explode or send the caller
                         to jail if it notices a particular outcome for the
                         qubit it measures.
 
+                        Should return True if the test failed (you died.)
 
 
         Returns True if it is a live bomb, False otherwise, along with the
             post-acted-upon bombState.
 
-        Side effects: None, but the measurer might send you to jail or
+        Side effects: None, but the tester might send you to jail or
             explode.
 
-        >>> (a, _) = isItABomb(I, bombState=listToState(["0"]), qubit=1, measurer=bombMeasurer)
+        >>> (a, _) = isItABomb(I, bombState=listToState(["0"]), qubit=1, tester=bombTester)
         >>> a
         False
         
-        >>> (a, s) = isItABomb(X, bombState=listToState(["0"]), qubit=1, measurer=bombMeasurer)
+        >>> (a, s) = isItABomb(X, bombState=listToState(["0"]), qubit=1, tester=bombTester)
         >>> all(s == listToState(["0"]))
         True
         >>> a
@@ -321,7 +324,7 @@ def isItABomb (bombOperator, bombState, qubit, measurer, N=None):
         # 4. Measure the qubit (ignoring the one we're rotating with) that
         # we've been asked to.
 
-        (failed, state) = measurer(state)
+        (failed, state) = tester(state)
 
         assert not failed, "You have died."
     
@@ -346,31 +349,32 @@ def isItABomb (bombOperator, bombState, qubit, measurer, N=None):
     return (bomb, finalState)
 
 
-def nsMeasureStep (state):
+def nsTester (s, state):
     """ We're going to ask the bank to measure the (relevant) bit of the state
         that we've been given.
+
+        Returns (True, state) if the test failed, and
+                (False, state) if it succeeded.
     """
 
     # HACK/XXX/TODO: We are actually politely asking the bank to only look at
     # the qubits that are relevant to the note. This is basically because our
     # states here aren't really QM states; when we slice up the arrays, we get
     # copies of them, and do not modify the original arrays (thankfully!).
+    
+    (valid, state) = validate((s, state), startingQubit=1)
 
-    return state
+    return (not valid, state)
 
 
 def nsCounterfeit ( (s, keyState) ):
     """ Counterfeits according to the protocol of Daniel Nagaj and Or Sattath.
 
-        # >>> ((s, forgedKeyState), original) = nsCounterfeit( getMoney(1000, seed=2) )
-        # >>> deposit( (s, forgedKeyState) )
-        # True
-
         (c.f. "naivelyCounterfeit")
     """
 
     # Let's cheat for a moment.
-    (s, key) = generateMoneyData(20, 1)
+    (s, key) = generateMoneyData(20, 3)
     keyState = listToState(key)
 
     # We're continually modifying this.
@@ -379,43 +383,41 @@ def nsCounterfeit ( (s, keyState) ):
     guessedKey = []
 
     # Our plan: Forge Money.
-    #
-    # We proceed as follows.
-
-    def didExplode (x):
-        return False
 
     eps = 0.10
     N = int(np.pi**2 * n / (2. * eps))
     
     # import pdb
     # pdb.set_trace()
-
     print("key, ", key)
 
-    outcomes = []
+    def curriedNsTester (state):
+        return nsTester(s, state)
+
+    guesses = []
     for k in xrange(1, n+1):
-        print "k ", k
 
-        (outcome1, state) = isItABomb( X, state, qubit=k, didExplode=didExplode, N=N)
+        guess = None
 
-        assert len(state) == len(keyState)
-        assert all(state == keyState)
+        (isDud, state) = isItABomb( X, state, qubit=k, tester=curriedNsTester, N=N)
 
-        # import pdb
-        # pdb.set_trace()
+        if isDud:
+            guess = "+"
 
-        (outcome2, state) = isItABomb(-X, state, qubit=k, didExplode=didExplode, N=N)
+        if not guess:
+            (isDud, state) = isItABomb(-X, state, qubit=k, tester=curriedNsTester, N=N)
+            if isDud: 
+                guess = "-"
 
-        # import pdb
-        # pdb.set_trace()
+        if not guess:
+            (a, state) = measure(state, basis="0,1", qubits=[k])
+            guess = a[0]
 
-        print outcome1, outcome2
-        outcomes.append( (outcome1, outcome2) )
+        guesses.append(guess)
 
-    print "Done"
-    import pdb
-    pdb.set_trace()
+    print("guess ", guesses)
+    # import pdb
+    # pdb.set_trace()
 
     return ((s, listToState(guessedKey)), (s, state))
 
@@ -426,7 +428,8 @@ def naivelyCounterfeit ( (s, keyState) ):
         computational basis.
 
         >>> (s, forgedKeyState) = naivelyCounterfeit( getMoney(1000, seed=2) )
-        >>> deposit( (s, forgedKeyState) )
+        >>> (a, _) = validate( (s, forgedKeyState) )
+        >>> a
         False
     """
     
@@ -446,10 +449,9 @@ def naivelyCounterfeit ( (s, keyState) ):
 # Bank-related bits.
 # -------------------------------
 
-def deposit ( (s, keyState), startingQubit=None ):
-    """ Returns True if the money can be deposited. False otherwise.
-        Furthermore, if we will actually notify the police if we determine
-        that the money is not legitimate.
+def validate ( (s, keyState), startingQubit=None ):
+    """ Returns True if the money can be deposited. False otherwise, along
+        with the state.
 
         (s, keyState):  The tuple returned by getMoney(amount).
 
@@ -459,25 +461,31 @@ def deposit ( (s, keyState), startingQubit=None ):
                         This is a hack.
 
         >>> (s, key) = generateMoneyData(20, 2)
-        >>> deposit( (s, listToState(key)) )
+        >>> (a, _) = validate( (s, listToState(key)) )
+        >>> a
         True
 
         >>> (s1, key1) = generateMoneyData(20, 3)
         >>> (s2, key2) = generateMoneyData(20, 4 )
-        >>> deposit( (s2, listToState(key1)) ) # Mismatched key and serial number.
+        >>> (a, _) = validate( (s2, listToState(key1)) ) # Mismatched key and serial number.
+        >>> a
         False
         
         >>> (s1, key1) = generateMoneyData(20, seed=32)
         >>> (s2, key2) = generateMoneyData(20, seed=412)
-        >>> deposit( (s1, listToState(key2)) ) 
+        >>> (a, _) = validate( (s1, listToState(key2)) ) 
+        >>> a
         False
 
-        >>> deposit( getMoney(50) )
+        >>> (a, _) = validate( getMoney(50) )
+        >>> a
         True
         """
 
     assert s in bankDatabase, "Key is not even in the database! What are you doing!"
     
+    inState = copy.copy(keyState)
+
     if not startingQubit:
         startingQubit = 0
 
@@ -491,25 +499,31 @@ def deposit ( (s, keyState), startingQubit=None ):
 
     outcomes = []
     for (i, k) in enumerate(referenceKey):
-        (a, keyState) = measure( keyState, basis=bases[k],
+        (a, keyState) = measure(keyState, basis=bases[k],
                 qubits=[i+1+startingQubit])
         outcomes.append(a[0])
 
+    # import pdb
+    # pdb.set_trace()
+
     if outcomes != referenceKey:
-        return False
+        # Invalid key, send them to jail.
+        return (False, keyState)
     
-    return True
+    return (True, keyState)
 
 
 def generateMoneyData (amount, seed=None):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
 
-        >>> (a, key) = generateMoneyData(20, seed=2)
+        >>> random.seed(2)
+        >>> np.random.seed(2)
+        >>> (a, key) = generateMoneyData(20, seed=3)
         >>> a
-        62
+        2
         >>> key[0:3]
-        ['-', '0', '0']
+        ['+', '1', '+']
         """
 
     if seed: random.seed(seed)
@@ -535,8 +549,13 @@ def getMoney (amount, seed=None):
 
 
 if __name__ == "__main__":
+    seed = 223
+
+    random.seed(seed)
+    np.random.seed(seed)
+
+    # Note: argument is ignored for now.
     (s, forged) = nsCounterfeit( getMoney(100) )
-    # deposit( 
 
 
 # Some tests
@@ -547,7 +566,7 @@ def test_naive_counterfeiting ():
     outcomes = []
     for k in xrange(iters):
         (s, keyState) = naivelyCounterfeit( getMoney(50) )
-        outcomes.append( deposit((s, keyState)) )
+        outcomes.append( validate((s, keyState)) )
     #
     trues  = len(filter(lambda x: x, outcomes))
     falses = len(outcomes) - trues
