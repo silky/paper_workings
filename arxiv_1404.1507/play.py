@@ -213,30 +213,55 @@ def listToState (key):
 # Attacker-bits
 # -------------------------------
 
-def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
+def bombMeasurer (state):
+    """ Measures the state and checks if it was a bomb or not.
+    """
+
+    # the "+1" is because we know that the control qubit is in the first
+    # position.
+    
+    (a, state) = measure(state, basis="0,1", qubits=[1 +1])
+
+    didExplode = lambda x: x == "1"
+    exploded   = didExplode(a[0])
+
+    return (exploded, state)
+
+
+def isItABomb (bombOperator, bombState, qubit, measurer, N=None):
     """ Implementation of the Elitzur-Vaidman "bomb-quality-tester". Or perhaps
         actually just an implementation of the circuit in Figure 1 of the
         paper.
 
-        bombOperator:  A single-qubit operation, whose measurement outcome we
+        bombOperator:   A single-qubit operation, whose measurement outcome we
                         will be interested in.
 
-        bomState:      The state which we are applying the bombOperator to.
+        bombState:      The state which we are applying the bombOperator to.
                         Note that we will only apply to the specified qubit.
 
-        didExplode:    A function that returns True or False when passed the
-                        measurement outcome after applying 'bombOperator'.
+        qubit:          The qubit, inside the bomb state, onto which we shall
+                        enact the 'bombOperator'.
+
+        measurer:       state -> (Bool, state)
+
+                        A function that takes a state and returns a state.
+                        This function should also explode or send the caller
+                        to jail if it notices a particular outcome for the
+                        qubit it measures.
+
+
 
         Returns True if it is a live bomb, False otherwise, along with the
             post-acted-upon bombState.
 
-        Side effects: You might die.
+        Side effects: None, but the measurer might send you to jail or
+            explode.
 
-        >>> (a, _) = isItABomb(I, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> (a, _) = isItABomb(I, bombState=listToState(["0"]), qubit=1, measurer=bombMeasurer)
         >>> a
         False
         
-        >>> (a, s) = isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> (a, s) = isItABomb(X, bombState=listToState(["0"]), qubit=1, measurer=bombMeasurer)
         >>> all(s == listToState(["0"]))
         True
         >>> a
@@ -282,24 +307,23 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         #   We choose to do this by measuring it in the computational basis,
         #   and if it is "|1>", apply "X" to it.
 
-        (a, state) = measure(state, basis="0,1", qubits=[2])
-        if a[0] == "1":
-            state = np.dot( np.kron(I, X), state )
+        # (a, state) = measure(state, basis="0,1", qubits=[2])
+        # if a[0] == "1":
+        #     state = np.dot( np.kron(I, X), state )
 
         
         # 2. Rotate the first qubit using R_delta.
-        state = np.dot( Rdelta, state )
+        state = np.dot(Rdelta, state)
         
         # 3. Apply controlled-bomb
         state = np.dot(C_bop, state)
 
         # 4. Measure the qubit (ignoring the one we're rotating with) that
         # we've been asked to.
-        (a, state) = measure(state, basis="0,1", qubits=[1 + qubit])
-        
-        exploded = didExplode(a)
 
-        assert not exploded, "You have died."
+        (failed, state) = measurer(state)
+
+        assert not failed, "You have died."
     
     # So now, if the first register is |1>, we know that we were passed a dud.
     (a, state) = measure(state, basis="0,1", qubits=[1])
@@ -320,6 +344,19 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         finalState = state[0:len(state)/2]
 
     return (bomb, finalState)
+
+
+def nsMeasureStep (state):
+    """ We're going to ask the bank to measure the (relevant) bit of the state
+        that we've been given.
+    """
+
+    # HACK/XXX/TODO: We are actually politely asking the bank to only look at
+    # the qubits that are relevant to the note. This is basically because our
+    # states here aren't really QM states; when we slice up the arrays, we get
+    # copies of them, and do not modify the original arrays (thankfully!).
+
+    return state
 
 
 def nsCounterfeit ( (s, keyState) ):
@@ -409,10 +446,17 @@ def naivelyCounterfeit ( (s, keyState) ):
 # Bank-related bits.
 # -------------------------------
 
-def deposit ( (s, keyState), key=None ):
+def deposit ( (s, keyState), startingQubit=None ):
     """ Returns True if the money can be deposited. False otherwise.
         Furthermore, if we will actually notify the police if we determine
         that the money is not legitimate.
+
+        (s, keyState):  The tuple returned by getMoney(amount).
+
+        startingQubit:  (optional) The qubit at which to begin measuring the
+                        keyState.
+
+                        This is a hack.
 
         >>> (s, key) = generateMoneyData(20, 2)
         >>> deposit( (s, listToState(key)) )
@@ -425,8 +469,8 @@ def deposit ( (s, keyState), key=None ):
         
         >>> (s1, key1) = generateMoneyData(20, seed=32)
         >>> (s2, key2) = generateMoneyData(20, seed=412)
-        >>> deposit( (s1, listToState(key1)), key1 ) 
-        True
+        >>> deposit( (s1, listToState(key2)) ) 
+        False
 
         >>> deposit( getMoney(50) )
         True
@@ -434,6 +478,9 @@ def deposit ( (s, keyState), key=None ):
 
     assert s in bankDatabase, "Key is not even in the database! What are you doing!"
     
+    if not startingQubit:
+        startingQubit = 0
+
     # Alright, so our process here is to measure each bit in the basis that we
     # know it should be measured in.
 
@@ -444,11 +491,11 @@ def deposit ( (s, keyState), key=None ):
 
     outcomes = []
     for (i, k) in enumerate(referenceKey):
-        (a, keyState) = measure( keyState, basis=bases[k], qubits=[i+1])
+        (a, keyState) = measure( keyState, basis=bases[k],
+                qubits=[i+1+startingQubit])
         outcomes.append(a[0])
 
     if outcomes != referenceKey:
-        # assert False
         return False
     
     return True
