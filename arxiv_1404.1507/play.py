@@ -2,7 +2,7 @@
 # coding: utf-8
 
 """ Plays around with Wiesner's quantum money scheme and this papers attack on
-    it.
+    it - https://scirate.com/arxiv/1404.1507
 
     All of this is in qubits.
     """
@@ -23,7 +23,7 @@ states = {
 I = np.identity(2)
 X = np.array([[0,1],[1,0]])
 H = np.array([[1,1],[1,-1]])/np.sqrt(2)
-n = 3 # They keysize
+n = 5 # The keysize
 
 # Our serial number database. is the map:
 #
@@ -273,12 +273,6 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
         True
         >>> a
         True
-
-        # If we reinterpret the results, we don't die on a "|1>" either.
-
-        # >>> (a, _) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
-        # >>> a
-        # True
     """
     if not N:
         # With N = 100, pr(success) from (3) of the paper is approximately 97.5%
@@ -311,12 +305,9 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
     for k in xrange(N):
         # 1. Initialise second qubit to |0>. 
         #
-        #   We choose to do this by measuring it in the computational basis,
-        #   and if it is "|1>", apply "X" to it.
-
-        # (a, state) = measure(state, basis="0,1", qubits=[2])
-        # if a[0] == "1":
-        #     state = np.dot( np.kron(I, X), state )
+        #    (Actually, this step isn't necessary. From figure (1) we'll
+        #    always be in the state we need after measurement (otherwise we'd
+        #    die) and similarly for the bank protocol.
 
         
         # 2. Rotate the first qubit using R_delta.
@@ -388,10 +379,6 @@ def nsCounterfeit ( (s, keyState) ):
         >>> a
         True
     """
-
-    # # Let's cheat for a moment.
-    # (s, key) = generateMoneyData(20, 6)
-    # keyState = listToState(key)
 
     # We're continually modifying this.
     state = keyState
@@ -533,18 +520,11 @@ def validate ( (s, keyState), startingQubit=None ):
 def generateMoneyData (amount):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
-
-        >>> setseed(3)
-        >>> (a, key) = generateMoneyData(20)
-        >>> a
-        2
-        >>> key[0:3]
-        ['+', '1', '+']
         """
 
     s = random.randint(0, 2**n)
 
-    # Let's generate a 7-bit key from the set of states {0,1,+,-}.
+    # Let's generate a n-bit key from the set of states {0,1,+,-}.
     alphabet = ["0", "1", "+", "-"]
     key = [ random.choice(alphabet) for k in xrange(n) ]
 
@@ -563,15 +543,15 @@ def getMoney (amount):
 
 
 if __name__ == "__main__":
-    setseed(6)
+    # setseed(6)
+    n = 3 # Say.
 
     (forged, original) = nsCounterfeit( getMoney(100) )
 
-    import pdb
-    pdb.set_trace()
-
     validate(forged)
     validate(original)
+
+    print("Success! We forged a {0:d}-qubit key!".format(n))
 
 
 
@@ -582,8 +562,10 @@ def test_naive_counterfeiting ():
     iters = 100 # Let's have a few attempts at counterfeiting.
     outcomes = []
     for k in xrange(iters):
-        (s, keyState) = naivelyCounterfeit( getMoney(50) )
-        outcomes.append( validate((s, keyState)) )
+        (s, key) = generateMoneyData(5)
+        (s, keyState) = naivelyCounterfeit( (s, listToState(key)) )
+        (valid, _) = validate((s, keyState))
+        outcomes.append(valid)
     #
     trues  = len(filter(lambda x: x, outcomes))
     falses = len(outcomes) - trues
