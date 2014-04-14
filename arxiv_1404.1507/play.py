@@ -415,6 +415,8 @@ def nsCounterfeit ( (s, keyState) ):
 
         guesses.append(guess)
 
+        assert all(state == keyState)
+
     print("guess ", guesses)
     # import pdb
     # pdb.set_trace()
