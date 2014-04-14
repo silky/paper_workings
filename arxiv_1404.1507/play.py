@@ -7,6 +7,7 @@
     All of this is in qubits.
     """
 
+
 # HACK/WARNING: Numpy and random use different seeds.
 import random
 import numpy as np
@@ -235,7 +236,9 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         >>> a
         False
         
-        >>> (a, _) = isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> (a, s) = isItABomb(X, bombState=listToState(["0"]), qubit=1, didExplode=lambda x: x[0] == "1")
+        >>> all(s == listToState(["0"]))
+        True
         >>> a
         True
 
@@ -243,6 +246,12 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
 
         >>> (a, _) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
         >>> a
+        True
+
+        Can we get out the state we send in?
+
+        >>> (_, s) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
+        >>> all(s == listToState(["1"]))
         True
     """
     if not N:
@@ -291,17 +300,23 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
     # So now, if the first register is |1>, we know that we were passed a dud.
     (a, state) = measure(state, basis="0,1", qubits=[1])
 
-    # Give them back the state they gave us, now that we have acted on it.
-    # finalState
+    # Give them back the state they gave us, now that we have acted on it. We
+    # are going to hand them this state in the worst possible way; we're going
+    # to use our knowledge of the control qubit to just take the relevant bit
+    # of the resulting 'state' matrix. I.e. if 'a = 0', then take the first
+    # half, and if 'a = 1', take the second half.
     
     if a[0] == "1":
         # Not a bomb.
         bomb = False
-    else:
+        finalState = state[len(state)/2:]
+    else: # a[0] == "0"
         # Otherwise, live bomb!
         bomb = True
+        finalState = state[0:len(state)/2]
 
-    # finalState = 
+    # import pdb
+    # pdb.set_trace()
 
     return (bomb, finalState)
 
@@ -416,22 +431,24 @@ def deposit ( (s, keyState), key=None ):
     return True
 
 
-def generateMoneyData (amount, seed=None, nn=None):
+def generateMoneyData (amount, seed=None):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
 
-        >>> generateMoneyData(20, seed=2, n=7)
-        (123, ['-', '0', '0', '-', '+', '+', '1'])
+        >>> (a, key) = generateMoneyData(20, seed=2)
+        >>> a
+        62
+        >>> key[0:3]
+        ['-', '0', '0']
         """
 
-    if not nn: nn = n
     if seed: random.seed(seed)
 
-    s = random.randint(0, 2**nn)
+    s = random.randint(0, 2**n)
 
     # Let's generate a 7-bit key from the set of states {0,1,+,-}.
     alphabet = ["0", "1", "+", "-"]
-    key = [ random.choice(alphabet) for k in xrange(nn) ]
+    key = [ random.choice(alphabet) for k in xrange(n) ]
 
     # Save this key.
     bankDatabase[s] = key
