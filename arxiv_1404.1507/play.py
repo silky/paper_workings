@@ -446,7 +446,7 @@ def naivelyCounterfeit ( (s, keyState) ):
         (a, keyState) = measure(keyState, basis="0,1", qubits=[i])
         guessedKey.append( a[0] )
 
-    return (s, listToState(guessedKey))
+    return ((s, listToState(guessedKey)), (s, keyState))
 
 
 # Bank-related bits.
