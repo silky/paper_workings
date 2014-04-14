@@ -8,7 +8,7 @@
     """
 
 
-# HACK/WARNING: Numpy and random use different seeds.
+# WARNING: Numpy and random use different seeds.
 import random
 import copy
 import numpy as np
@@ -36,6 +36,11 @@ bankDatabase = {}
 
 # General bits
 # -------------------------------
+
+def setseed (seed):
+    random.seed(seed)
+    np.random.seed(seed)
+
 
 def ct (array):
     """ Conjugate-transpose.  """
@@ -108,8 +113,7 @@ def measure (inState, basis="0,1", qubits=None):
                [ 0.70710678],
                [ 0.        ]]))
 
-        >>> np.random.seed(1) # Requires a seed as the first component of a is nondetermininstic
-        >>> random.seed(1) # Requires a seed as the first component of a is nondetermininstic
+        >>> setseed(1) # Requires a seed as the first component of a is nondetermininstic
         >>> measure( listToState(["+", "0"]),  basis="0,1", qubits=[1, 2] )
         (['1', '0'], array([[ 0.],
                [ 0.],
@@ -371,28 +375,36 @@ def nsCounterfeit ( (s, keyState) ):
     """ Counterfeits according to the protocol of Daniel Nagaj and Or Sattath.
 
         (c.f. "naivelyCounterfeit")
+
+        Returns two tuples of (s, |k_s>), where the first tuple is the forged
+        one, and the second one is the key we derived it from.
+
+        >>> setseed(6)
+        >>> (forged, original) = nsCounterfeit(getMoney(100))
+        >>> (a, _) = validate(forged)
+        >>> a
+        True
+        >>> (a, _) = validate(original)
+        >>> a
+        True
     """
 
-    # Let's cheat for a moment.
-    (s, key) = generateMoneyData(20, 6)
-    keyState = listToState(key)
+    # # Let's cheat for a moment.
+    # (s, key) = generateMoneyData(20, 6)
+    # keyState = listToState(key)
 
     # We're continually modifying this.
     state = keyState
-
-    guessedKey = []
 
     # Our plan: Forge Money.
 
     eps = 0.10
     N = int(np.pi**2 * n / (2. * eps))
     
-    print("key, ", key)
-
     def curriedNsTester (state):
         return nsTester(s, state)
 
-    guesses = []
+    guessedKey = []
     for k in xrange(1, n+1):
 
         guess = None
@@ -411,13 +423,9 @@ def nsCounterfeit ( (s, keyState) ):
             (a, state) = measure(state, basis="0,1", qubits=[k])
             guess = a[0]
 
-        guesses.append(guess)
+        guessedKey.append(guess)
 
         assert all(abs(state - keyState) < 1e-15)
-
-    # print("guess ", guesses)
-    # import pdb
-    # pdb.set_trace()
 
     return ((s, listToState(guessedKey)), (s, state))
 
@@ -427,10 +435,16 @@ def naivelyCounterfeit ( (s, keyState) ):
         Counterfeits the given (s, |k_s>) pair by measuring each qubit in the
         computational basis.
 
-        >>> (s, forgedKeyState) = naivelyCounterfeit( getMoney(1000, seed=2) )
+        >>> setseed(3)
+        >>> (s, key) = generateMoneyData(1000)
+        >>> assert '+' in key
+        >>> (s, forgedKeyState) = naivelyCounterfeit( (s, listToState(key)) )
         >>> (a, _) = validate( (s, forgedKeyState) )
         >>> a
         False
+
+        (We expect a fail above because the key is not entirely in the
+        computational basis.)
     """
     
     # Our plan: Forge Money. We perform the forgery naively, by measuring
@@ -460,19 +474,22 @@ def validate ( (s, keyState), startingQubit=None ):
 
                         This is a hack.
 
-        >>> (s, key) = generateMoneyData(20, 2)
+        >>> setseed(2)
+        >>> (s, key) = generateMoneyData(20)
         >>> (a, _) = validate( (s, listToState(key)) )
         >>> a
         True
 
-        >>> (s1, key1) = generateMoneyData(20, 3)
-        >>> (s2, key2) = generateMoneyData(20, 4 )
+        >>> setseed(3)
+        >>> (s1, key1) = generateMoneyData(20)
+        >>> (s2, key2) = generateMoneyData(20)
         >>> (a, _) = validate( (s2, listToState(key1)) ) # Mismatched key and serial number.
         >>> a
         False
         
-        >>> (s1, key1) = generateMoneyData(20, seed=32)
-        >>> (s2, key2) = generateMoneyData(20, seed=412)
+        >>> setseed(32)
+        >>> (s1, key1) = generateMoneyData(20)
+        >>> (s2, key2) = generateMoneyData(20)
         >>> (a, _) = validate( (s1, listToState(key2)) ) 
         >>> a
         False
@@ -513,20 +530,17 @@ def validate ( (s, keyState), startingQubit=None ):
     return (True, keyState)
 
 
-def generateMoneyData (amount, seed=None):
+def generateMoneyData (amount):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
 
-        >>> random.seed(2)
-        >>> np.random.seed(2)
-        >>> (a, key) = generateMoneyData(20, seed=3)
+        >>> setseed(3)
+        >>> (a, key) = generateMoneyData(20)
         >>> a
         2
         >>> key[0:3]
         ['+', '1', '+']
         """
-
-    if seed: random.seed(seed)
 
     s = random.randint(0, 2**n)
 
@@ -539,23 +553,26 @@ def generateMoneyData (amount, seed=None):
     return (s, key)
 
 
-def getMoney (amount, seed=None):
+def getMoney (amount):
     """ Returns (s, |k_s>).
         """
-    (s, key) = generateMoneyData(amount, seed)
+    (s, key) = generateMoneyData(amount)
     keyState = listToState(key)
 
     return (s, keyState)
 
 
 if __name__ == "__main__":
-    seed = 223
+    setseed(6)
 
-    random.seed(seed)
-    np.random.seed(seed)
+    (forged, original) = nsCounterfeit( getMoney(100) )
 
-    # Note: argument is ignored for now.
-    (s, forged) = nsCounterfeit( getMoney(100) )
+    import pdb
+    pdb.set_trace()
+
+    validate(forged)
+    validate(original)
+
 
 
 # Some tests
