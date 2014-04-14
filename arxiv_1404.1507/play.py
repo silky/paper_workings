@@ -5,6 +5,9 @@
     it - https://scirate.com/arxiv/1404.1507
 
     All of this is in qubits.
+
+    Note that none of this has been written to be very efficient; it could be
+    dramatically improved, if one wished.
     """
 
 
@@ -122,7 +125,7 @@ def measure (inState, basis="0,1", qubits=None):
 
     """
     assert basis in ["0,1", "+,-"]
-    assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
+    assert abs(np.linalg.norm(inState) - 1) < 1e-15, "Norm not 1."
 
     # Some local vairables.
     state = inState
@@ -170,10 +173,8 @@ def measure (inState, basis="0,1", qubits=None):
 
         data = weightedChoice(options, np.array(probs))
         
-        # 
         # Great. We can now update the state, we also probably need to
         # normalise it.
-        #
 
         state = data["vec"]
         state = state/np.linalg.norm(state)
@@ -183,8 +184,6 @@ def measure (inState, basis="0,1", qubits=None):
         else:              basisLabel = data["i"]
 
         outcomes.append(basisLabel)
-
-    # assert abs(np.linalg.norm(state) - 1) < 1e-10, "Norm not 1."
 
     # Return the measurement outcomes for the qubits, and the resulting state.
     return (outcomes, state)
@@ -285,7 +284,6 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
 
     dimBomb = int(np.log2(len(bombState)))
 
-
     # R_delta on only the first qubit.
     Rdelta = np.kron( np.array([
         [ np.cos(delta), -np.sin(delta) ],
@@ -299,7 +297,7 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
     # Controlled-bomb operator
     C_bop = np.kron( np.dot(s0, ct(s0)), np.identity(2**dimBomb) ) + np.kron( np.dot(s1, ct(s1)), bop )
 
-    # 1. Initial value.
+    # 0. Initial value.
     state = np.kron( listToState(["0"]), bombState )
 
     for k in xrange(N):
@@ -395,6 +393,10 @@ def nsCounterfeit ( (s, keyState) ):
     for k in xrange(1, n+1):
 
         guess = None
+
+        # Following section 3, we check if the bomb tester detects "duds" for
+        # "X" and "-X". If not, it's in the computational basis, so we measure
+        # it, and we're done.
 
         (bomb, state) = isItABomb(X, state, qubit=k, tester=curriedNsTester, N=N)
 
@@ -496,8 +498,7 @@ def validate ( (s, keyState), startingQubit=None ):
     # Alright, so our process here is to measure each bit in the basis that we
     # know it should be measured in.
 
-    referenceKey      = bankDatabase[s]
-    referenceKeyState = listToState(referenceKey)
+    referenceKey = bankDatabase[s]
 
     bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-" } 
 
@@ -506,9 +507,6 @@ def validate ( (s, keyState), startingQubit=None ):
         (a, keyState) = measure(keyState, basis=bases[k],
                 qubits=[i+1+startingQubit])
         outcomes.append(a[0])
-
-    # import pdb
-    # pdb.set_trace()
 
     if outcomes != referenceKey:
         # Invalid key, send them to jail.
@@ -543,10 +541,11 @@ def getMoney (amount):
 
 
 if __name__ == "__main__":
-    # setseed(6)
-    n = 3 # Say.
+    n = 5 # Say.
 
-    (forged, original) = nsCounterfeit( getMoney(100) )
+    (s, key) = generateMoneyData(1000)
+    print("Planning on counterfeiting key: |{0}>, #{1}.".format("".join(key), s))
+    (forged, original) = nsCounterfeit( (s, listToState(key)) )
 
     validate(forged)
     validate(original)
