@@ -242,17 +242,11 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         >>> a
         True
 
-        If we reinterpret the results, we don't die on a "|1>" either.
+        # If we reinterpret the results, we don't die on a "|1>" either.
 
-        >>> (a, _) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
-        >>> a
-        True
-
-        Can we get out the state we send in?
-
-        >>> (_, s) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
-        >>> all(s == listToState(["1"]))
-        True
+        # >>> (a, _) = isItABomb(X, bombState=listToState(["1"]), qubit=1, didExplode=lambda x: x[0] == "0")
+        # >>> a
+        # True
     """
     if not N:
         # With N = 100, pr(success) from (3) of the paper is approximately 97.5%
@@ -283,6 +277,16 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
     state = np.kron( listToState(["0"]), bombState )
 
     for k in xrange(N):
+        # 1. Initialise second qubit to |0>. 
+        #
+        #   We choose to do this by measuring it in the computational basis,
+        #   and if it is "|1>", apply "X" to it.
+
+        (a, state) = measure(state, basis="0,1", qubits=[2])
+        if a[0] == "1":
+            state = np.dot( np.kron(I, X), state )
+
+        
         # 2. Rotate the first qubit using R_delta.
         state = np.dot( Rdelta, state )
         
@@ -314,9 +318,6 @@ def isItABomb (bombOperator, bombState, qubit, didExplode, N=None):
         # Otherwise, live bomb!
         bomb = True
         finalState = state[0:len(state)/2]
-
-    # import pdb
-    # pdb.set_trace()
 
     return (bomb, finalState)
 
@@ -350,12 +351,34 @@ def nsCounterfeit ( (s, keyState) ):
     eps = 0.10
     N = int(np.pi**2 * n / (2. * eps))
     
+    # import pdb
+    # pdb.set_trace()
+
+    print("key, ", key)
+
     outcomes = []
     for k in xrange(1, n+1):
+        print "k ", k
+
         (outcome1, state) = isItABomb( X, state, qubit=k, didExplode=didExplode, N=N)
+
+        assert len(state) == len(keyState)
+        assert all(state == keyState)
+
+        # import pdb
+        # pdb.set_trace()
+
         (outcome2, state) = isItABomb(-X, state, qubit=k, didExplode=didExplode, N=N)
 
+        # import pdb
+        # pdb.set_trace()
+
+        print outcome1, outcome2
         outcomes.append( (outcome1, outcome2) )
+
+    print "Done"
+    import pdb
+    pdb.set_trace()
 
     return ((s, listToState(guessedKey)), (s, state))
 
