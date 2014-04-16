@@ -17,9 +17,6 @@ import copy
 from memoize import memoize
 import numpy as np
 
-# TODO:
-#   I think there is a problem with the measurement.
-#
 __version__ = "0.1"
 
 I = np.identity(2)
