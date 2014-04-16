@@ -17,6 +17,11 @@ import copy
 from memoize import memoize
 import numpy as np
 
+# TODO:
+#   I think there is a problem with the measurement.
+#
+__version__ = "0.1"
+
 I = np.identity(2)
 X = np.array([[0,1],[1,0]])
 H = np.array([[1,1],[1,-1]])/np.sqrt(2)
@@ -394,13 +399,14 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
     return (bomb, finalState)
 
 
-def nsTester (s, state):
+def nsTester (s, inState):
     """ We're going to ask the bank to measure the (relevant) bit of the state
         that we've been given.
 
         Returns (True, state) if the test failed, and
                 (False, state) if it succeeded.
     """
+    state = copy.copy(inState)
 
     # HACK/XXX/TODO: We are actually politely asking the bank to only look at
     # the qubits that are relevant to the note. This is basically because our
@@ -408,6 +414,10 @@ def nsTester (s, state):
     # copies of them, and do not modify the original arrays (thankfully!).
     
     (valid, state) = validate((s, state), startingQubit=1)
+
+    # if not valid:
+    #     import pdb
+    #     pdb.set_trace()
 
     return (not valid, state)
 
@@ -649,6 +659,9 @@ if __name__ == "__main__":
     (s, key) = generateEntangledMoney(1000, n)
 
     key = ["0", "1", "b4"]
+    key = ["0", "1", "b3"]
+
+    key = ["b3"]
     bankDatabase[s] = key
 
     print("Planning on counterfeiting key: |{0}>, #{1}.".format("".join(key), s))
@@ -661,8 +674,6 @@ if __name__ == "__main__":
         print("Success! We forged a {0:d}-qubit key!".format(n))
     else:
         print("We went to jail.")
-        import pdb
-        pdb.set_trace()
 
 
 
