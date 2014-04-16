@@ -16,6 +16,15 @@ import random
 import copy
 import numpy as np
 
+# The keysize that is used throughout this file (and in particular the
+# one used when the doctests run.
+n = 4 
+
+I = np.identity(2)
+X = np.array([[0,1],[1,0]])
+H = np.array([[1,1],[1,-1]])/np.sqrt(2)
+HH = np.kron(H, H)
+
 states = {
     "0": np.array([[1], [0]]),
     "1": np.array([[0], [1]]),
@@ -23,10 +32,20 @@ states = {
     "-": np.array([[1], [-1]])/np.sqrt(2),
 }
 
-I = np.identity(2)
-X = np.array([[0,1],[1,0]])
-H = np.array([[1,1],[1,-1]])/np.sqrt(2)
-n = 5 # The keysize
+# Add in the bell-basis states.
+states["b1"] = (np.kron(states["0"], states["1"]) + np.kron(states["1"],
+        states["0"]))/np.sqrt(2)
+states["b2"] = (np.kron(states["0"], states["1"]) - np.kron(states["1"],
+        states["0"]))/np.sqrt(2)
+states["b3"] = (np.kron(states["0"], states["0"]) + np.kron(states["1"],
+        states["1"]))/np.sqrt(2)
+states["b4"] = (np.kron(states["0"], states["0"]) - np.kron(states["1"],
+        states["1"]))/np.sqrt(2)
+
+states["Hb1"] = np.dot(HH, states["b1"])
+states["Hb2"] = np.dot(HH, states["b2"])
+states["Hb3"] = np.dot(HH, states["b3"])
+states["Hb4"] = np.dot(HH, states["b4"])
 
 # Our serial number database. is the map:
 #
@@ -123,8 +142,30 @@ def measure (inState, basis="0,1", qubits=None):
                [ 1.],
                [ 0.]]))
 
+        NOTE/HACK/XXX:
+            Here we say to only measure the qubit "1". Of course, given that
+            we are measuring in the Bell basis, we're going to measure two
+            qubits.
+
+        >>> measure( listToState(["b1"]), qubits=[1], basis="Bell" )
+        (['b1'], array([[ 0.        ],
+               [ 0.70710678],
+               [ 0.70710678],
+               [ 0.        ]]))
+
+        >>> measure( listToState(["b4"]), qubits=[1], basis="Bell" )
+        (['b4'], array([[ 0.70710678],
+               [ 0.        ],
+               [ 0.        ],
+               [-0.70710678]]))
+
+        >>> measure( listToState(["Hb3"]), qubits=[1], basis="HBell" )
+        (['Hb3'], array([[ 0.70710678],
+               [ 0.        ],
+               [ 0.        ],
+               [ 0.70710678]]))
     """
-    assert basis in ["0,1", "+,-"]
+    assert basis in ["0,1", "+,-", "Bell", "HBell"]
     assert abs(np.linalg.norm(inState) - 1) < 1e-15, "Norm not 1."
 
     # Some local vairables.
@@ -136,17 +177,26 @@ def measure (inState, basis="0,1", qubits=None):
 
     basisChanger = np.identity(len(state))
 
+    # We always measure in the computational basis, except when we don't.
+    labels = ["0", "1"]
+    measurementBasis = [ listToState(["0"]), listToState(["1"]) ]
+
     if basis == "+,-":
+        labels =  ["+", "-"]
         # Hadamard the bits we're measuring, then just measure them in the
         # computational basis. So build a thing that changes basis.
         
         H_or_I = lambda x: H if (x in qubits) else I
         
-        allHadamards = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
-        basisChanger = allHadamards
+        basisChanger = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
+    
+    if basis == "Bell":
+        measurementBasis = [ states["b1"], states["b2"], states["b3"], states["b4"] ]
+        labels = ["b1", "b2", "b3", "b4"]
 
-    # We always measure in the computational basis.
-    measurementBasis = [ listToState(["0"]), listToState(["1"]) ]
+    if basis == "HBell":
+        measurementBasis = [ states["Hb1"], states["Hb2"], states["Hb3"], states["Hb4"] ]
+        labels = ["Hb1", "Hb2", "Hb3", "Hb4"]
 
     outcomes = []
     for qubitPosition in qubits:
@@ -158,9 +208,10 @@ def measure (inState, basis="0,1", qubits=None):
         # each projector P_{e_i}.
 
         for (i, ei) in enumerate(measurementBasis):
+            mbSize = int(np.log2(len(measurementBasis[0])))
             proj = reduce(np.kron, [ np.identity(2**(qubitPosition-1)),
                 np.dot(ei, np.conj(np.transpose(ei))),
-                np.identity(2**(dim-qubitPosition)) ], 1)
+                np.identity(2**(dim-(qubitPosition+mbSize)+1)) ], 1)
 
             # Switch proj
             proj = np.dot( np.conj(np.transpose(basisChanger)), np.dot( proj, basisChanger ) )
@@ -168,7 +219,7 @@ def measure (inState, basis="0,1", qubits=None):
             vec  = np.dot( proj, state )
             prob = np.dot( np.conj(np.transpose(vec)), vec )
 
-            options.append( {"i": str(i), "vec": vec} )
+            options.append( {"i": labels[i], "vec": vec} )
             probs.append( prob.flatten()[0] )
 
         data = weightedChoice(options, np.array(probs))
@@ -178,10 +229,7 @@ def measure (inState, basis="0,1", qubits=None):
 
         state = data["vec"]
         state = state/np.linalg.norm(state)
-
-        # Lazily relabel if we were asked to.
-        if basis == "+,-": basisLabel = {"0": "+", "1": "-"}[data["i"]]
-        else:              basisLabel = data["i"]
+        basisLabel = data["i"]
 
         outcomes.append(basisLabel)
 
@@ -486,9 +534,17 @@ def validate ( (s, keyState), startingQubit=None ):
         >>> (a, _) = validate( getMoney(50) )
         >>> a
         True
+
+        >>> setseed(32)
+        >>> (s, eKey) = generateEntangledMoney(10)
+        >>> eKey
+        ['+', '-', 'Hb3', 'b2']
+        >>> (a, _)    = validate( (s, listToState(eKey)) )
+        >>> a
+        True
         """
 
-    assert s in bankDatabase, "Key is not even in the database! What are you doing!"
+    assert s in bankDatabase, "Key is not even in the database! What are you doing!?"
     
     inState = copy.copy(keyState)
 
@@ -500,13 +556,27 @@ def validate ( (s, keyState), startingQubit=None ):
 
     referenceKey = bankDatabase[s]
 
-    bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-" } 
+    bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-",
+            "b1": "Bell", "b2": "Bell", "b3": "Bell", "b4": "Bell",
+            "Hb1": "HBell", "Hb2": "HBell", "Hb3": "HBell", "Hb4": "HBell",
+            } 
 
     outcomes = []
+    shift    = 0 
     for (i, k) in enumerate(referenceKey):
-        (a, keyState) = measure(keyState, basis=bases[k],
-                qubits=[i+1+startingQubit])
+        qubitsToMeasure = [i+1+startingQubit+shift]
+
+        (a, keyState) = measure(keyState, basis=bases[k], qubits=qubitsToMeasure)
         outcomes.append(a[0])
+
+        if "b" in k: # Insane way of encoding this.
+            # HACK/XXX/TODO
+            #
+            # Because we're going to measure the next qubit as well, if this
+            # qubit was in the Bell basis, we need to shift the index of the
+            # subsequent measurements.
+            shift = shift + 1
+
 
     if outcomes != referenceKey:
         # Invalid key, send them to jail.
@@ -515,11 +585,20 @@ def validate ( (s, keyState), startingQubit=None ):
     return (True, keyState)
 
 
-def generateMoneyData (amount):
-    """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
-        key that will be used to build the money state.
-        """
+def generateEntangledMoney (amount):
+    s = random.randint(0, 2**n)
 
+    # Let's generate a n-bit key from the set of states {0,1,+,-}.
+    alphabet = ["0", "1", "+", "-", 
+            "b1", "b2", "b3", "b4", "Hb1", "Hb2", "Hb3", "Hb4"
+            ]
+    key = [ random.choice(alphabet) for k in xrange(n) ]
+
+    # Save this key.
+    bankDatabase[s] = key
+    return (s, key)
+
+def generateRegularMoney (amount):
     s = random.randint(0, 2**n)
 
     # Let's generate a n-bit key from the set of states {0,1,+,-}.
@@ -529,6 +608,13 @@ def generateMoneyData (amount):
     # Save this key.
     bankDatabase[s] = key
     return (s, key)
+
+
+def generateMoneyData (amount):
+    """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
+        key that will be used to build the money state.
+        """
+    return generateRegularMoney(amount)
 
 
 def getMoney (amount):
