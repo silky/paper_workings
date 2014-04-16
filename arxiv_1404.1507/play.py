@@ -478,14 +478,15 @@ def nsCounterfeit ( (s, keyState) ):
                 guess = "-"
 
         if not guess:
+            # This operation breaks if the key is entangled.
             (a, state) = measure(state, basis="0,1", qubits=[k])
             guess = a[0]
+
+        assert all(abs(state - keyState) < 1e-10), "We broke the original."
 
         guessedKey.append(guess)
 
     guessedKeyState = listToState(guessedKey)
-
-    assert all(abs(state - keyState) < 1e-10), "We broke the original."
 
     return ((s, guessedKeyState), (s, state))
 
