@@ -39,11 +39,6 @@ states["b3"] = (np.kron(states["0"], states["0"]) + np.kron(states["1"],
 states["b4"] = (np.kron(states["0"], states["0"]) - np.kron(states["1"],
         states["1"]))/np.sqrt(2)
 
-states["Hb1"] = np.dot(HH, states["b1"])
-states["Hb2"] = np.dot(HH, states["b2"])
-states["Hb3"] = np.dot(HH, states["b3"])
-states["Hb4"] = np.dot(HH, states["b4"])
-
 # Our serial number database. is the map:
 #
 #   s -> bases
@@ -182,14 +177,8 @@ def measure (inState, basis="0,1", qubits=None):
                [ 0.        ],
                [ 0.        ],
                [-0.70710678]]))
-
-        >>> measure( listToState(["Hb3"]), qubits=[1], basis="HBell" )
-        (['Hb3'], array([[ 0.70710678],
-               [ 0.        ],
-               [ 0.        ],
-               [ 0.70710678]]))
     """
-    assert basis in ["0,1", "+,-", "Bell", "HBell"]
+    assert basis in ["0,1", "+,-", "Bell"]
     assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
 
     # Some local vairables.
@@ -217,10 +206,6 @@ def measure (inState, basis="0,1", qubits=None):
     if basis == "Bell":
         measurementBasis = [ states["b1"], states["b2"], states["b3"], states["b4"] ]
         labels = ["b1", "b2", "b3", "b4"]
-
-    if basis == "HBell":
-        measurementBasis = [ states["Hb1"], states["Hb2"], states["Hb3"], states["Hb4"] ]
-        labels = ["Hb1", "Hb2", "Hb3", "Hb4"]
 
     outcomes = []
     for qubitPosition in qubits:
@@ -586,7 +571,6 @@ def validate ( (s, keyState), startingQubit=None ):
 
     bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-",
             "b1": "Bell", "b2": "Bell", "b3": "Bell", "b4": "Bell",
-            "Hb1": "HBell", "Hb2": "HBell", "Hb3": "HBell", "Hb4": "HBell",
             } 
 
     outcomes = []
@@ -620,7 +604,7 @@ def generateEntangledMoney (amount, n):
     twos = random.randint(0, int(n/2.))
     ones = n - 2*twos
 
-    twoQubit = [ "b1", "b2", "b3", "b4", "Hb1", "Hb2", "Hb3", "Hb4" ]
+    twoQubit = [ "b1", "b2", "b3", "b4" ]
     oneQubit = ["0", "1", "+", "-" ]
 
     key =  [ random.choice(oneQubit) for k in xrange(ones) ]
