@@ -14,11 +14,8 @@
 # WARNING: Numpy and random use different seeds.
 import random
 import copy
+from memoize import memoize
 import numpy as np
-
-# The keysize that is used throughout this file (and in particular the
-# one used when the doctests run.
-n = 4 
 
 I = np.identity(2)
 X = np.array([[0,1],[1,0]])
@@ -64,6 +61,33 @@ def setseed (seed):
     np.random.seed(seed)
 
 
+def dim (state):
+    return int(np.log2(len(state)))
+
+
+@memoize
+def operatorAt (op, position, qubitDim):
+    """ Creates an operator at the particular location.
+
+        >>> op = operatorAt( np.identity(2), position=1, qubitDim=1 )
+        >>> all((np.identity(2) == op).tolist())
+        True
+        """
+
+    opDim = dim(op)
+
+    assert position + opDim - 1 <= qubitDim, "Operation cannot fit here."
+
+    op = reduce(np.kron, [
+        np.identity(2**(position-1)),
+        op,
+        np.identity(2**(qubitDim-(position-1+opDim))) ],
+        1)
+
+    return op
+
+
+@memoize
 def ct (array):
     """ Conjugate-transpose.  """
     return np.conj(np.transpose(array))
@@ -166,14 +190,14 @@ def measure (inState, basis="0,1", qubits=None):
                [ 0.70710678]]))
     """
     assert basis in ["0,1", "+,-", "Bell", "HBell"]
-    assert abs(np.linalg.norm(inState) - 1) < 1e-15, "Norm not 1."
+    assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
 
     # Some local vairables.
     state = inState
-    dim   = int(np.log2(len(state)))
+    n     = dim(state)
 
     if not qubits: # no qubits? all qubits.
-        qubits = xrange(1, dim+1)
+        qubits = xrange(1, n+1)
 
     basisChanger = np.identity(len(state))
 
@@ -188,7 +212,7 @@ def measure (inState, basis="0,1", qubits=None):
         
         H_or_I = lambda x: H if (x in qubits) else I
         
-        basisChanger = reduce(np.kron, [H_or_I(x) for x in xrange(1, dim+1)], 1)
+        basisChanger = reduce(np.kron, [H_or_I(x) for x in xrange(1, n+1)], 1)
     
     if basis == "Bell":
         measurementBasis = [ states["b1"], states["b2"], states["b3"], states["b4"] ]
@@ -208,10 +232,7 @@ def measure (inState, basis="0,1", qubits=None):
         # each projector P_{e_i}.
 
         for (i, ei) in enumerate(measurementBasis):
-            mbSize = int(np.log2(len(measurementBasis[0])))
-            proj = reduce(np.kron, [ np.identity(2**(qubitPosition-1)),
-                np.dot(ei, np.conj(np.transpose(ei))),
-                np.identity(2**(dim-(qubitPosition+mbSize)+1)) ], 1)
+            proj = operatorAt(np.dot(ei, np.conj(np.transpose(ei))), qubitPosition, n)
 
             # Switch proj
             proj = np.dot( np.conj(np.transpose(basisChanger)), np.dot( proj, basisChanger ) )
@@ -224,9 +245,8 @@ def measure (inState, basis="0,1", qubits=None):
 
         data = weightedChoice(options, np.array(probs))
         
-        # Great. We can now update the state, we also probably need to
-        # normalise it.
-
+        # Great. We can now update the state.
+        
         state = data["vec"]
         state = state/np.linalg.norm(state)
         basisLabel = data["i"]
@@ -237,6 +257,7 @@ def measure (inState, basis="0,1", qubits=None):
     return (outcomes, state)
 
 
+@memoize
 def listToState (key):
     """ Builds a quantum state from the "key" specifying the state.
         >>> listToState(["1", "0"])
@@ -330,7 +351,7 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
     
     delta = np.pi/(2. * N)
 
-    dimBomb = int(np.log2(len(bombState)))
+    dimBomb = dim(bombState)
 
     # R_delta on only the first qubit.
     Rdelta = np.kron( np.array([
@@ -338,9 +359,7 @@ def isItABomb (bombOperator, bombState, qubit, tester, N=None):
         [ np.sin(delta),  np.cos(delta) ] ]), np.identity(2**dimBomb) )
 
     # Set the bomb operator to act only on the qubit we've asked it to.
-    bop = reduce(np.kron, [ np.identity(2**(qubit-1)),
-        bombOperator,
-        np.identity(2**(dimBomb-qubit)) ], 1)
+    bop = operatorAt(bombOperator, qubit, dimBomb)
 
     # Controlled-bomb operator
     C_bop = np.kron( np.dot(s0, ct(s0)), np.identity(2**dimBomb) ) + np.kron( np.dot(s1, ct(s1)), bop )
@@ -417,7 +436,7 @@ def nsCounterfeit ( (s, keyState) ):
         one, and the second one is the key we derived it from.
 
         >>> setseed(6)
-        >>> (forged, original) = nsCounterfeit(getMoney(100))
+        >>> (forged, original) = nsCounterfeit(getMoney(100, n=3))
         >>> (a, _) = validate(forged)
         >>> a
         True
@@ -425,6 +444,8 @@ def nsCounterfeit ( (s, keyState) ):
         >>> a
         True
     """
+
+    n = dim(keyState)
 
     # We're continually modifying this.
     state = keyState
@@ -462,9 +483,11 @@ def nsCounterfeit ( (s, keyState) ):
 
         guessedKey.append(guess)
 
-        assert all(abs(state - keyState) < 1e-15)
+    guessedKeyState = listToState(guessedKey)
 
-    return ((s, listToState(guessedKey)), (s, state))
+    assert all(abs(state - keyState) < 1e-10), "We broke the original."
+
+    return ((s, guessedKeyState), (s, state))
 
  
 def naivelyCounterfeit ( (s, keyState) ):
@@ -473,7 +496,7 @@ def naivelyCounterfeit ( (s, keyState) ):
         computational basis.
 
         >>> setseed(3)
-        >>> (s, key) = generateMoneyData(1000)
+        >>> (s, key) = generateMoneyData(1000, n=3)
         >>> assert '+' in key
         >>> (forged, original) = naivelyCounterfeit( (s, listToState(key)) )
         >>> (a, _) = validate(forged)
@@ -484,6 +507,8 @@ def naivelyCounterfeit ( (s, keyState) ):
         computational basis.)
     """
     
+    n = dim(keyState)
+
     # Our plan: Forge Money. We perform the forgery naively, by measuring
     # qubit in the computational basis. This gives is the right answer when
     # the state is in this basis, and the wrong answer 1/4 of the time
@@ -512,35 +537,37 @@ def validate ( (s, keyState), startingQubit=None ):
                         This is a hack.
 
         >>> setseed(2)
-        >>> (s, key) = generateMoneyData(20)
+        >>> (s, key) = generateMoneyData(20, n=3)
         >>> (a, _) = validate( (s, listToState(key)) )
         >>> a
         True
 
         >>> setseed(3)
-        >>> (s1, key1) = generateMoneyData(20)
-        >>> (s2, key2) = generateMoneyData(20)
+        >>> (s1, key1) = generateMoneyData(20, n=3)
+        >>> (s2, key2) = generateMoneyData(20, n=3)
         >>> (a, _) = validate( (s2, listToState(key1)) ) # Mismatched key and serial number.
         >>> a
         False
         
         >>> setseed(32)
-        >>> (s1, key1) = generateMoneyData(20)
-        >>> (s2, key2) = generateMoneyData(20)
+        >>> (s1, key1) = generateMoneyData(20, n=3)
+        >>> (s2, key2) = generateMoneyData(20, n=3)
         >>> (a, _) = validate( (s1, listToState(key2)) ) 
         >>> a
         False
 
-        >>> (a, _) = validate( getMoney(50) )
+        >>> (a, _) = validate( getMoney(50, n=3) )
         >>> a
         True
 
-        >>> setseed(32)
-        >>> (s, eKey) = generateEntangledMoney(10)
+        >>> setseed(3)
+        >>> (s, eKey) = generateEntangledMoney(10, n=5)
         >>> eKey
-        ['+', '-', 'Hb3', 'b2']
-        >>> (a, _)    = validate( (s, listToState(eKey)) )
+        ['1', '+', '+', 'b1']
+        >>> (a, after)    = validate( (s, listToState(eKey)) )
         >>> a
+        True
+        >>> all((after - listToState(eKey) < 1e-10).tolist())
         True
         """
 
@@ -585,20 +612,25 @@ def validate ( (s, keyState), startingQubit=None ):
     return (True, keyState)
 
 
-def generateEntangledMoney (amount):
+def generateEntangledMoney (amount, n):
+    # Serial number.
     s = random.randint(0, 2**n)
 
-    # Let's generate a n-bit key from the set of states {0,1,+,-}.
-    alphabet = ["0", "1", "+", "-", 
-            "b1", "b2", "b3", "b4", "Hb1", "Hb2", "Hb3", "Hb4"
-            ]
-    key = [ random.choice(alphabet) for k in xrange(n) ]
+    twos = random.randint(0, int(n/2.))
+    ones = n - 2*twos
+
+    twoQubit = [ "b1", "b2", "b3", "b4", "Hb1", "Hb2", "Hb3", "Hb4" ]
+    oneQubit = ["0", "1", "+", "-" ]
+
+    key =  [ random.choice(oneQubit) for k in xrange(ones) ]
+    key += [ random.choice(twoQubit) for k in xrange(twos) ]
 
     # Save this key.
     bankDatabase[s] = key
     return (s, key)
 
-def generateRegularMoney (amount):
+
+def generateRegularMoney (amount, n):
     s = random.randint(0, 2**n)
 
     # Let's generate a n-bit key from the set of states {0,1,+,-}.
@@ -610,33 +642,42 @@ def generateRegularMoney (amount):
     return (s, key)
 
 
-def generateMoneyData (amount):
+def generateMoneyData (amount, n):
     """ Returns a tuple (s, k_s) where s is the serial number, and k_s is the
         key that will be used to build the money state.
         """
-    return generateRegularMoney(amount)
+    return generateRegularMoney(amount, n)
 
 
-def getMoney (amount):
+def getMoney (amount, n):
     """ Returns (s, |k_s>).
         """
-    (s, key) = generateMoneyData(amount)
+    (s, key) = generateMoneyData(amount, n)
     keyState = listToState(key)
 
     return (s, keyState)
 
 
 if __name__ == "__main__":
-    n = 5 # Say.
+    n = 4 # Say.
 
-    (s, key) = generateMoneyData(1000)
+    (s, key) = generateEntangledMoney(1000, n)
+
+    key = ["0", "1", "b4"]
+    bankDatabase[s] = key
+
     print("Planning on counterfeiting key: |{0}>, #{1}.".format("".join(key), s))
     (forged, original) = nsCounterfeit( (s, listToState(key)) )
 
-    validate(forged)
-    validate(original)
+    (a, _) = validate(forged)
+    (b, _) = validate(original)
 
-    print("Success! We forged a {0:d}-qubit key!".format(n))
+    if a and b:
+        print("Success! We forged a {0:d}-qubit key!".format(n))
+    else:
+        print("We went to jail.")
+        import pdb
+        pdb.set_trace()
 
 
 
