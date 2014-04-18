@@ -29,6 +29,8 @@ states = {
     "1": np.array([[0], [1]]),
     "+": np.array([[1], [1]])/np.sqrt(2),
     "-": np.array([[1], [-1]])/np.sqrt(2),
+    "r3+": np.array([[1], [np.sqrt(2)]])/np.sqrt(3),
+    "r3-": np.array([[np.sqrt(2)], [-1]])/np.sqrt(3),
 }
 
 # Add in the bell-basis states.
@@ -179,8 +181,13 @@ def measure (inState, basis="0,1", qubits=None):
                [ 0.        ],
                [ 0.        ],
                [-0.70710678]]))
+
+        >>> measure( listToState(["r3+"]), qubits=[1], basis="r3" )
+        (['r3+'], array([[ 0.57735027],
+               [ 0.81649658]]))
+
     """
-    assert basis in ["0,1", "+,-", "Bell"]
+    assert basis in ["0,1", "+,-", "Bell", "r3"]
     assert abs(np.linalg.norm(inState) - 1) < 1e-10, "Norm not 1."
 
     # Some local vairables.
@@ -208,6 +215,10 @@ def measure (inState, basis="0,1", qubits=None):
     if basis == "Bell":
         measurementBasis = [ states["b1"], states["b2"], states["b3"], states["b4"] ]
         labels = ["b1", "b2", "b3", "b4"]
+
+    if basis == "r3":
+        measurementBasis = [ states["r3+"], states["r3-"] ]
+        labels = ["r3+", "r3-"]
 
     outcomes = []
     for qubitPosition in qubits:
@@ -578,6 +589,7 @@ def validate ( (s, keyState), startingQubit=None ):
 
     bases = { "0": "0,1", "1": "0,1", "+": "+,-", "-": "+,-",
             "b1": "Bell", "b2": "Bell", "b3": "Bell", "b4": "Bell",
+            "r3+": "r3", "r3-": "r3"
             } 
 
     outcomes = []
@@ -622,6 +634,19 @@ def generateEntangledMoney (amount, n):
     return (s, key)
 
 
+def generateSomeOtherMoney (amount, n):
+    s = random.randint(0, 2**n)
+
+    # Let's generate a n-bit key from the set of states {0,1,+,-}.
+    alphabet = ["0", "1", "r3+", "r3-"]
+    key = [ random.choice(alphabet) for k in xrange(n) ]
+
+    # Save this key.
+    bankDatabase[s] = key
+    return (s, key)
+
+
+
 def generateRegularMoney (amount, n):
     s = random.randint(0, 2**n)
 
@@ -653,12 +678,14 @@ def getMoney (amount, n):
 if __name__ == "__main__":
     n = 4 # Say.
 
-    (s, key) = generateEntangledMoney(1000, n)
+    # (s, key) = generateEntangledMoney(1000, n)
+    print("n ", n)
+    (s, key) = generateSomeOtherMoney(1000, n)
 
-    key = ["0", "1", "b4"]
-    key = ["0", "1", "b3"]
+    # key = ["0", "1", "b4"]
+    # key = ["0", "1", "b3"]
 
-    key = ["b3"]
+    # key = ["b3"]
     bankDatabase[s] = key
 
     print("Planning on counterfeiting key: |{0}>, #{1}.".format("".join(key), s))
