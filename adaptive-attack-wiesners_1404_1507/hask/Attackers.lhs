@@ -32,7 +32,6 @@
 >                                      , measure
 >                                      , basisVectors
 >                                      , operatorAt
->                                      , discard
 >                                      )
 > import           Data.Packed.Matrix  ( Matrix
 >                                      , mapMatrix
@@ -109,7 +108,17 @@ performing this test.
 >                       Right _ -> error "You died."
 >                   )
 >       (newState, outcomes) = measure gen state [1] (basisVectors "0")
->       result = (head outcomes == "1", discard [1] newState)
+>       sadness = toList (flatten newState)
+>       sadlen  = length sadness
+>       detectedBomb = head outcomes == "1"
+>       much = if detectedBomb then
+>                           take (sadlen `div` 2) sadness
+>                           else
+>                           drop (sadlen `div` 2) sadness
+>       result = (detectedBomb, (dimBomb><1) much)
+>
+>
+>       -- result = (head outcomes == "1", discard [1] newState)
 
 
 

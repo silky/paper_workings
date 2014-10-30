@@ -5,12 +5,7 @@
 > {-# LANGUAGE TemplateHaskell        #-}
 > {-# LANGUAGE TypeSynonymInstances   #-}
 >
-> module Banks (
->       StandardBank
->     , validate
->     , ValidateResponse
->     , Bank
->  ) where
+> module Banks where
 >
 > import           Control.Lens        ( makeFields
 >                                      , (^.) -- View

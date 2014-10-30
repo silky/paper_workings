@@ -1,7 +1,6 @@
 module Utils ( indexes
              , basisToState
              , measure
-             , discard
              , basisVectors
              , mdim
              , operatorAt
@@ -64,13 +63,15 @@ measure :: StdGen
         -> [Int] 
         -> [(BasisId, QuantumState)]
         -> (QuantumState, [BasisId])
-measure gen state qubits basis = result
+measure gen state qubits basis = (a, b)
   where
+      -- TODO: Absolutely horrfying with the StdGen stuff.
+      (a, b, _) = result
       n      = mdim state
-      result = foldl f (state, []) [1..n]
-      f (state', xs) i = undefined -- (mState, label : xs)
+      result = foldl f (state, [], gen) [1..n]
+      f (state', xs, gen') i = (mState, label : xs, gen'')
         where
-            (label,  mState) = R.runRand (R.fromList probs) gen
+            ((label,  mState), gen'') =  R.runRand (R.fromList probs) gen'
             -- "probs" is now a list
             probs = map g basis
             g (label, ei)  = ((label, mState), prob)
@@ -82,8 +83,8 @@ measure gen state qubits basis = result
 
 
 -- | Discards the particular qubits from the given state.
-discard :: [Int] -> QuantumState -> QuantumState
-discard = undefined
+-- discard :: [Int] -> QuantumState -> QuantumState
+-- discard = undefined
 
 
 -- | Given a particular basis identifier, return a list of basis states.
